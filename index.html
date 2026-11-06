@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Сошиал туслах</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f6f7f6;
+    --line: #e4e7e5;
+    --text: #1a1f1d;
+    --muted: #66706b;
+    --primary: #1f4d40;      /* гол өнгө: гүн хар-ногоон */
+    --primary-soft: #e8efec;
+    --danger: #a3352b;
+    --danger-soft: #f8ebe9;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  html { scroll-padding-top: 72px; scroll-padding-bottom: 170px; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 17px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .hidden { display: none !important; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+
+  header.top {
+    position: sticky; top: 0; z-index: 5; background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  .brand { font-weight: 600; letter-spacing: .2px; font-size: 18px; }
+  .brand span { color: var(--primary); }
+
+  main.wrap { padding-top: 20px; padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 24px; font-weight: 600; margin: 0 0 16px; letter-spacing: -.2px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 28px 0 10px; }
+  p.hint { color: var(--muted); font-size: 15px; margin: 4px 0 0; }
+
+  /* Товч */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 52px; padding: 0 22px; border-radius: var(--radius);
+    font: inherit; font-weight: 600; font-size: 16px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    text-decoration: none;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: var(--line); }
+  .btn.block { width: 100%; }
+  .btn.small { min-height: 40px; padding: 0 14px; font-size: 15px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+  .btn-row .btn { flex: 1 1 160px; }
+  #composeButtons:empty { display: none; }
+  #composeButtons .btn { flex: 1 1 120px; }
+
+  /* Талбар */
+  label.field { display: block; margin-top: 16px; }
+  label.field > span { display: block; font-weight: 500; font-size: 15px; margin-bottom: 6px; }
+  input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], textarea, select {
+    width: 100%; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 13px 14px; min-height: 52px;
+  }
+  textarea { min-height: 120px; resize: vertical; line-height: 1.55; }
+  textarea.big { min-height: 260px; }
+  input:focus, textarea:focus, select:focus, .btn:focus-visible, .chip:focus-visible {
+    outline: 2px solid var(--primary); outline-offset: 1px;
+  }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* Сонголтын чип */
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--bg); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; color: var(--text);
+  }
+  .chip[aria-pressed=true] { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* Доод цэс */
+  nav.tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    background: var(--bg); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav.tabs .wrap { display: grid; grid-template-columns: repeat(3, 1fr); }
+  nav.tabs a {
+    display: flex; align-items: center; justify-content: center; height: 64px;
+    color: var(--muted); text-decoration: none; font-weight: 500; font-size: 15px;
+    border-top: 2px solid transparent;
+  }
+  nav.tabs a.active { color: var(--primary); border-top-color: var(--primary); font-weight: 600; }
+
+  /* Календарь */
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .cal-head h1 { margin: 0; }
+  .icon-btn {
+    width: 44px; height: 44px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg);
+    font-size: 20px; cursor: pointer; color: var(--text);
+  }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .dow { text-align: center; font-size: 13px; color: var(--muted); padding: 4px 0; }
+  .day {
+    min-height: 56px; border-radius: 10px; border: 1px solid transparent; background: var(--surface);
+    padding: 6px 4px; cursor: pointer; font: inherit; font-size: 15px; color: var(--text);
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .day.out { background: transparent; color: #b3b9b6; }
+  .day.today .num { color: var(--primary); font-weight: 700; }
+  .day.sel { border-color: var(--primary); background: var(--primary-soft); }
+  .dots { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; max-width: 100%; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #c2c8c5; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+
+  /* Төлвийн өнгө */
+  .s-draft { --s: #a7aeaa; }
+  .s-approved { --s: var(--primary); }
+  .s-publishing { --s: #5b7fa3; }
+  .s-published { --s: #6aa287; }
+  .s-failed { --s: var(--danger); }
+  .dot[class*=s-], .legend i[class*=s-] { background: var(--s); }
+  .badge {
+    display: inline-block; font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    color: var(--s); background: color-mix(in srgb, var(--s) 12%, white); white-space: nowrap;
+  }
+
+  .list { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line); }
+  .list li { border-bottom: 1px solid var(--line); }
+  .list a { display: flex; gap: 14px; padding: 14px 2px; text-decoration: none; color: inherit; align-items: flex-start; }
+  .list .time { font-weight: 600; min-width: 52px; font-variant-numeric: tabular-nums; }
+  .list .body { flex: 1; min-width: 0; }
+  .list .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+  .list .text { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .empty { color: var(--muted); padding: 20px 0; }
+
+  /* Мэдэгдэл */
+  .note { border-radius: var(--radius); padding: 14px 16px; margin-top: 16px; font-size: 15px; background: var(--surface); }
+  .note.error { background: var(--danger-soft); color: var(--danger); }
+  .note.ok { background: var(--primary-soft); color: var(--primary); }
+  .toast {
+    position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 20;
+    background: var(--text); color: #fff; padding: 12px 18px; border-radius: 10px; font-size: 15px;
+    max-width: calc(100% - 32px); box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  }
+
+  /* Нэвтрэх */
+  .login { max-width: 400px; margin: 12vh auto 0; padding: 0 16px; }
+  .login .brand { font-size: 22px; margin-bottom: 6px; }
+
+  .channel { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .muted { color: var(--muted); }
+  .counter { text-align: right; font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  @media (min-width: 760px) {
+    main.wrap { padding-top: 32px; }
+    .day { min-height: 76px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Нэвтрэх -->
+<section id="loginView" class="login hidden">
+  <div class="brand">Сошиал <span>туслах</span></div>
+  <p class="hint">Зөвхөн эзэмшигч нэвтэрнэ.</p>
+  <form id="loginForm">
+    <label class="field"><span>Имэйл</span>
+      <input type="email" id="loginEmail" autocomplete="username" required></label>
+    <label class="field"><span>Нууц үг</span>
+      <input type="password" id="loginPass" autocomplete="current-password" required></label>
+    <div id="loginErr" class="note error hidden"></div>
+    <div class="btn-row"><button class="btn primary block" type="submit" id="loginBtn">Нэвтрэх</button></div>
+  </form>
+</section>
+
+<!-- Апп -->
+<div id="appView" class="hidden">
+  <header class="top"><div class="wrap">
+    <div class="brand">Сошиал <span>туслах</span></div>
+    <a class="btn small primary" href="#compose">+ Шинэ пост</a>
+  </div></header>
+
+  <main class="wrap">
+    <!-- Календарь -->
+    <section id="calendarView" class="hidden">
+      <div class="cal-head">
+        <button class="icon-btn" id="prevMonth" aria-label="Өмнөх сар">‹</button>
+        <h1 id="monthTitle"></h1>
+        <button class="icon-btn" id="nextMonth" aria-label="Дараагийн сар">›</button>
+      </div>
+      <div class="grid" id="calGrid"></div>
+      <div class="legend">
+        <span><i class="s-draft"></i>Ноорог</span>
+        <span><i class="s-approved"></i>Батлагдсан</span>
+        <span><i class="s-published"></i>Нийтлэгдсэн</span>
+        <span><i class="s-failed"></i>Алдаатай</span>
+      </div>
+      <h2 id="dayTitle"></h2>
+      <ul class="list" id="dayList"></ul>
+    </section>
+
+    <!-- Бичих -->
+    <section id="composeView" class="hidden">
+      <h1 id="composeTitle">Шинэ пост</h1>
+      <div id="composeStatus"></div>
+
+      <form id="composeForm">
+        <fieldset id="composeFields" style="border:0;padding:0;margin:0">
+          <label class="field"><span>Төрөл</span></label>
+          <div class="chips" id="kindChips">
+            <button type="button" class="chip" data-kind="poster" aria-pressed="true">Постер</button>
+            <button type="button" class="chip" data-kind="reel" aria-pressed="false">Reel</button>
+          </div>
+
+          <label class="field"><span>Хаана нийтлэх</span></label>
+          <div class="chips" id="channelChips">
+            <button type="button" class="chip" data-ch="facebook" aria-pressed="true">Facebook</button>
+            <button type="button" class="chip" data-ch="instagram" aria-pressed="true">Instagram</button>
+          </div>
+
+          <label class="field"><span>Сэдэв</span>
+            <input type="text" id="topic" placeholder="Жишээ нь: шинэ серум, өвлийн арьс арчилгаа"></label>
+
+          <label class="field"><span id="bodyLabel">Постын бичвэр</span>
+            <textarea id="body" class="big" placeholder="Бичвэрээ энд бичнэ үү"></textarea></label>
+          <div class="counter" id="counter">0 тэмдэгт</div>
+
+          <label class="field"><span>Нийтлэх өдөр, цаг</span></label>
+          <div class="two">
+            <input type="date" id="date" aria-label="Өдөр">
+            <input type="time" id="time" aria-label="Цаг">
+          </div>
+          <div class="chips" id="timeChips" style="margin-top:10px"></div>
+        </fieldset>
+
+        <div id="composeErr" class="note error hidden"></div>
+        <div class="btn-row" id="composeButtons"></div>
+      </form>
+    </section>
+
+    <!-- Тохиргоо -->
+    <section id="settingsView" class="hidden">
+      <h1>Тохиргоо</h1>
+      <form id="profileForm">
+        <h2 style="margin-top:0">Миний тухай</h2>
+        <label class="field"><span>Брэнд, хуудасны нэр</span>
+          <input type="text" id="p_brand" placeholder="Жишээ нь: Nu Skin Mongolia"></label>
+        <label class="field"><span>Би юу хийдэг вэ</span>
+          <textarea id="p_about" placeholder="Жишээ нь: Nu Skin брэндийн бүтээгдэхүүнийг Монголд албан ёсоор оруулж, зөвлөгөө өгдөг."></textarea></label>
+        <label class="field"><span>Хэнд зориулж бичдэг вэ</span>
+          <textarea id="p_audience" placeholder="Жишээ нь: чанартай, премиум бүтээгдэхүүн хайдаг, худалдан авах чадвар өндөр хүмүүс."></textarea></label>
+
+        <h2>Бичих өнгө аяс</h2>
+        <label class="field"><span>Өнгө аяс</span>
+          <textarea id="p_tone" placeholder="Жишээ нь: элегант, минимал, тайван хэрнээ гал цогтой, итгэл төрүүлэхүйц."></textarea></label>
+        <label class="field"><span>Миний бичсэн жишээ постууд</span>
+          <textarea id="p_samples" class="big" placeholder="2-3 постоо хуулж оруулна уу. Постуудын хооронд --- гэж зурна уу."></textarea></label>
+        <p class="hint">AI энэ мэдээллийг ашиглан таны хэв маягаар бичнэ (2-р шатанд).</p>
+
+        <div id="profileMsg" class="note hidden"></div>
+        <div class="btn-row"><button class="btn primary block" type="submit" id="profileSave">Хадгалах</button></div>
+      </form>
+
+      <h2>Холбосон сувгууд</h2>
+      <div class="channel"><div><strong>Facebook хуудас</strong><div class="muted" style="font-size:14px">3-р шатанд холбоно</div></div><span class="badge s-draft">Холбоогүй</span></div>
+      <div class="channel"><div><strong>Instagram</strong><div class="muted" style="font-size:14px">4-р шатанд холбоно</div></div><span class="badge s-draft">Холбоогүй</span></div>
+
+      <h2>Бүртгэл</h2>
+      <p class="muted" id="whoami" style="margin:0 0 12px"></p>
+      <button class="btn block" id="logoutBtn" type="button">Гарах</button>
+    </section>
+  </main>
+
+  <nav class="tabs"><div class="wrap">
+    <a href="#calendar" data-tab="calendar">Календарь</a>
+    <a href="#compose" data-tab="compose">Бичих</a>
+    <a href="#settings" data-tab="settings">Тохиргоо</a>
+  </div></nav>
+</div>
+
+<div id="toast" class="toast hidden" role="status"></div>
+
+<script>
+// ---------- Тохиргоо (энэ хоёр нь нийтэд ил байх зориулалттай, нууц биш) ----------
+const SUPABASE_URL = 'https://dyoypuebinolfwnwadkd.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_xM4Xa3oQCpFpbjIrzTCLTQ_ef9hn3ZL';
+
+const TIME_SLOTS = { poster: ['09:00', '15:00', '19:00'], reel: ['12:30', '21:00'] };
+const STATUS = {
+  draft: 'Ноорог', approved: 'Батлагдсан', publishing: 'Нийтэлж байна',
+  published: 'Нийтлэгдсэн', failed: 'Алдаатай'
+};
+const KIND = { poster: 'Постер', reel: 'Reel' };
+const MONTHS = ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар','7-р сар','8-р сар','9-р сар','10-р сар','11-р сар','12-р сар'];
+const DOW = ['Да','Мя','Лх','Пү','Ба','Бя','Ня'];
+const DOW_LONG = ['Ням','Даваа','Мягмар','Лхагва','Пүрэв','Баасан','Бямба'];
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const $ = (id) => document.getElementById(id);
+const state = { user: null, month: startOfMonth(new Date()), selected: ymd(new Date()), posts: [], editing: null };
+
+// ---------- Туслах функцууд ----------
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function pad(n) { return String(n).padStart(2, '0'); }
+function ymd(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function hm(d) { return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function prettyDay(s) { const d = new Date(s + 'T00:00'); return `${d.getMonth()+1}-р сарын ${d.getDate()}, ${DOW_LONG[d.getDay()]}`; }
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), 2600);
+}
+function friendlyError(e) {
+  const m = (e && (e.message || e.error_description)) || String(e);
+  if (/Invalid login credentials/i.test(m)) return 'Имэйл эсвэл нууц үг буруу байна.';
+  if (/Failed to fetch|NetworkError|network/i.test(m)) return 'Интернэт холболтоо шалгаад дахин оролдоно уу.';
+  if (/JWT|session|not authenticated/i.test(m)) return 'Нэвтрэх хугацаа дууссан байна. Дахин нэвтэрнэ үү.';
+  if (/[А-Яа-яӨөҮүЁё]/.test(m)) return m; // манай серверийн монгол алдаа
+  return 'Алдаа гарлаа: ' + m;
+}
+function showError(el, e) { el.textContent = friendlyError(e); el.classList.remove('hidden'); }
+function hide(el) { el.classList.add('hidden'); }
+
+// ---------- Нэвтрэлт ----------
+$('loginForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  hide($('loginErr')); $('loginBtn').disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email: $('loginEmail').value.trim(), password: $('loginPass').value });
+  $('loginBtn').disabled = false;
+  if (error) showError($('loginErr'), error);
+});
+$('logoutBtn').addEventListener('click', async () => { await sb.auth.signOut(); });
+
+sb.auth.onAuthStateChange((_event, session) => {
+  const user = session?.user || null;
+  const changed = (user?.id || null) !== (state.user?.id || null);
+  state.user = user;
+  if (!changed) return;
+  if (user) { $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden'); $('whoami').textContent = user.email; route(); }
+  else { $('appView').classList.add('hidden'); $('loginView').classList.remove('hidden'); $('loginPass').value = ''; }
+});
+
+// ---------- Чиглүүлэлт ----------
+window.addEventListener('hashchange', () => state.user && route());
+function route() {
+  const h = location.hash.replace(/^#/, '') || 'calendar';
+  const [view, id] = h.split('/');
+  for (const v of ['calendar', 'compose', 'settings']) $(v + 'View').classList.toggle('hidden', v !== view);
+  document.querySelectorAll('nav.tabs a').forEach(a => a.classList.toggle('active', a.dataset.tab === view && !(view === 'compose' && id)));
+  if (view === 'compose' && id) document.querySelector('nav.tabs a[data-tab=calendar]').classList.add('active');
+  window.scrollTo(0, 0);
+  if (view === 'calendar') loadCalendar();
+  else if (view === 'compose') openCompose(id);
+  else if (view === 'settings') loadProfile();
+  else location.hash = '#calendar';
+}
+
+// ---------- Календарь ----------
+$('prevMonth').onclick = () => { state.month = new Date(state.month.getFullYear(), state.month.getMonth() - 1, 1); loadCalendar(); };
+$('nextMonth').onclick = () => { state.month = new Date(state.month.getFullYear(), state.month.getMonth() + 1, 1); loadCalendar(); };
+
+function gridRange() {
+  const first = state.month;
+  const offset = (first.getDay() + 6) % 7; // Даваа гарагаас эхэлнэ
+  const start = new Date(first.getFullYear(), first.getMonth(), 1 - offset);
+  const end = new Date(start); end.setDate(start.getDate() + 42);
+  return { start, end };
+}
+
+async function loadCalendar() {
+  const m = state.month;
+  $('monthTitle').textContent = `${m.getFullYear()} оны ${MONTHS[m.getMonth()]}`;
+  const { start, end } = gridRange();
+  renderCalendar(); // хоосноор нь эхлээд зурна
+  const { data, error } = await sb.from('posts')
+    .select('id, kind, topic, body, channels, scheduled_at, status, error')
+    .gte('scheduled_at', start.toISOString()).lt('scheduled_at', end.toISOString())
+    .order('scheduled_at');
+  if (error) { toast(friendlyError(error)); return; }
+  // Цаг тавиагүй ноорогуудыг тусад нь
+  const { data: undated } = await sb.from('posts').select('id, kind, topic, body, channels, scheduled_at, status').is('scheduled_at', null).order('created_at', { ascending: false });
+  state.posts = data || [];
+  state.undated = undated || [];
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const { start } = gridRange();
+  const byDay = {};
+  for (const p of state.posts || []) { const k = ymd(new Date(p.scheduled_at)); (byDay[k] ||= []).push(p); }
+  const today = ymd(new Date());
+  let html = DOW.map(d => `<div class="dow">${d}</div>`).join('');
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const k = ymd(d), list = byDay[k] || [];
+    const cls = ['day', d.getMonth() !== state.month.getMonth() && 'out', k === today && 'today', k === state.selected && 'sel'].filter(Boolean).join(' ');
+    const dots = list.slice(0, 6).map(p => `<span class="dot s-${p.status}"></span>`).join('');
+    html += `<button class="${cls}" data-day="${k}" aria-label="${prettyDay(k)}, ${list.length} пост"><span class="num">${d.getDate()}</span><span class="dots">${dots}</span></button>`;
+  }
+  $('calGrid').innerHTML = html;
+  $('calGrid').querySelectorAll('.day').forEach(b => b.onclick = () => { state.selected = b.dataset.day; renderCalendar(); });
+
+  const sel = byDay[state.selected] || [];
+  $('dayTitle').textContent = prettyDay(state.selected);
+  let items = sel.map(postItem).join('');
+  if (!sel.length) items = `<li class="empty">Энэ өдөр пост алга. <a href="#compose" data-newday="${state.selected}">Пост нэмэх</a></li>`;
+  if (state.undated?.length) {
+    items += `<li class="empty" style="padding-bottom:4px"><strong>Цаг тавиагүй ноорог</strong></li>` + state.undated.map(postItem).join('');
+  }
+  $('dayList').innerHTML = items;
+  const add = $('dayList').querySelector('[data-newday]');
+  if (add) add.onclick = (e) => { e.preventDefault(); state.newDay = add.dataset.newday; location.hash = '#compose'; };
+}
+
+function postItem(p) {
+  const t = p.scheduled_at ? hm(new Date(p.scheduled_at)) : '—';
+  const text = p.body || p.topic || '(хоосон)';
+  const ch = (p.channels || []).map(c => c === 'facebook' ? 'FB' : 'IG').join(' · ');
+  return `<li><a href="#compose/${p.id}">
+    <div class="time">${t}</div>
+    <div class="body">
+      <div class="meta"><span class="badge s-${p.status}">${STATUS[p.status]}</span><span>${KIND[p.kind]}</span><span>${ch}</span></div>
+      <div class="text">${esc(text)}</div>
+    </div></a></li>`;
+}
+
+// ---------- Бичих ----------
+const form = { kind: 'poster', channels: ['facebook', 'instagram'] };
+
+$('kindChips').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-kind]'); if (!b) return;
+  form.kind = b.dataset.kind; syncChips();
+});
+$('channelChips').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ch]'); if (!b) return;
+  const c = b.dataset.ch;
+  form.channels = form.channels.includes(c) ? form.channels.filter(x => x !== c) : [...form.channels, c];
+  syncChips();
+});
+$('timeChips').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-time]'); if (!b) return;
+  $('time').value = b.dataset.time; syncChips();
+});
+$('time').addEventListener('input', syncChips);
+$('body').addEventListener('input', () => { $('counter').textContent = `${$('body').value.length} тэмдэгт`; });
+
+function syncChips() {
+  document.querySelectorAll('#kindChips .chip').forEach(b => b.setAttribute('aria-pressed', b.dataset.kind === form.kind));
+  document.querySelectorAll('#channelChips .chip').forEach(b => b.setAttribute('aria-pressed', form.channels.includes(b.dataset.ch)));
+  $('bodyLabel').textContent = form.kind === 'reel' ? 'Reel-ийн тайлбар бичвэр' : 'Постын бичвэр';
+  $('timeChips').innerHTML = TIME_SLOTS[form.kind].map(t =>
+    `<button type="button" class="chip" data-time="${t}" aria-pressed="${$('time').value === t}">${t}</button>`).join('');
+}
+
+async function openCompose(id) {
+  hide($('composeErr'));
+  $('composeStatus').innerHTML = '';
+  let p = null;
+  if (id) {
+    const { data, error } = await sb.from('posts').select('*').eq('id', id).maybeSingle();
+    if (error || !data) { toast(error ? friendlyError(error) : 'Пост олдсонгүй'); location.hash = '#calendar'; return; }
+    p = data;
+  }
+  state.editing = p;
+  form.kind = p?.kind || 'poster';
+  form.channels = p?.channels || ['facebook', 'instagram'];
+  $('topic').value = p?.topic || '';
+  $('body').value = p?.body || '';
+  $('counter').textContent = `${$('body').value.length} тэмдэгт`;
+  if (p?.scheduled_at) { const d = new Date(p.scheduled_at); $('date').value = ymd(d); $('time').value = hm(d); }
+  else { $('date').value = state.newDay || state.selected || ymd(new Date()); $('time').value = ''; }
+  state.newDay = null;
+  $('composeTitle').textContent = p ? 'Пост засах' : 'Шинэ пост';
+  syncChips();
+  renderComposeState();
+}
+
+function renderComposeState() {
+  const p = state.editing, s = p?.status || 'draft';
+  const locked = s === 'published' || s === 'publishing';
+  $('composeFields').disabled = locked || s === 'approved';
+  let status = p ? `<p style="margin:0 0 4px"><span class="badge s-${s}">${STATUS[s]}</span></p>` : '';
+  if (s === 'approved') status += `<div class="note ok">Батлагдсан. Товлосон цагт нь автоматаар нийтлэгдэнэ. Засах бол эхлээд батлалтыг цуцална уу.</div>`;
+  if (s === 'published') status += `<div class="note ok">Нийтлэгдсэн${p.published_at ? ': ' + new Date(p.published_at).toLocaleString('mn-MN') : ''}.</div>`;
+  if (s === 'publishing') status += `<div class="note">Яг одоо нийтэлж байна…</div>`;
+  if (s === 'failed') status += `<div class="note error"><strong>Нийтэлж чадсангүй.</strong><br>${esc(p.error || 'Тодорхойгүй алдаа.')}</div>`;
+  $('composeStatus').innerHTML = status;
+
+  const b = [];
+  if (s === 'draft') {
+    b.push(`<button type="button" class="btn" data-act="save">Ноорог хадгалах</button>`);
+    b.push(`<button type="button" class="btn primary" data-act="approve">Батлах</button>`);
+  } else if (s === 'approved') {
+    b.push(`<button type="button" class="btn" data-act="unapprove">Батлалтыг цуцлах</button>`);
+  } else if (s === 'failed') {
+    b.push(`<button type="button" class="btn" data-act="save">Засаад ноорог болгох</button>`);
+    b.push(`<button type="button" class="btn primary" data-act="retry">Дахин оролдох</button>`);
+  }
+  if (p && !locked) b.push(`<button type="button" class="btn danger" data-act="delete">Устгах</button>`);
+  $('composeButtons').innerHTML = b.join('');
+}
+
+$('composeButtons').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-act]'); if (!btn) return;
+  hide($('composeErr'));
+  const act = btn.dataset.act;
+  const all = $('composeButtons').querySelectorAll('button');
+  all.forEach(x => x.disabled = true);
+  try { await actions[act](); }
+  catch (err) { showError($('composeErr'), err); }
+  finally { all.forEach(x => x.disabled = false); }
+});
+
+function readForm() {
+  const date = $('date').value, time = $('time').value;
+  return {
+    kind: form.kind, channels: form.channels,
+    topic: $('topic').value.trim(), body: $('body').value.trim(),
+    scheduled_at: date && time ? new Date(`${date}T${time}`).toISOString() : null
+  };
+}
+
+async function savePost(fields) {
+  const p = state.editing;
+  const q = p ? sb.from('posts').update(fields).eq('id', p.id) : sb.from('posts').insert(fields);
+  const { data, error } = await q.select().single();
+  if (error) throw error;
+  state.editing = data;
+  if (!p) history.replaceState(null, '', '#compose/' + data.id);
+  if (data.scheduled_at) state.selected = ymd(new Date(data.scheduled_at));
+  return data;
+}
+
+const actions = {
+  async save() {
+    const f = readForm();
+    if (!f.body && !f.topic) throw new Error('Сэдэв эсвэл бичвэрийн аль нэгийг бичнэ үү.');
+    await savePost({ ...f, status: 'draft' });
+    renderComposeState(); toast('Ноорог хадгалагдлаа');
+  },
+  async approve() {
+    const f = readForm();
+    if (!f.body) throw new Error('Бичвэр хоосон байна.');
+    if (!f.channels.length) throw new Error('Дор хаяж нэг сувгаа сонгоно уу.');
+    if (!f.scheduled_at) throw new Error('Нийтлэх өдөр, цагаа сонгоно уу.');
+    if (new Date(f.scheduled_at) < new Date() && !confirm('Сонгосон цаг өнгөрсөн байна. Батлавал удахгүй шууд нийтлэгдэнэ. Үргэлжлүүлэх үү?')) return;
+    await savePost({ ...f, status: 'approved' });
+    renderComposeState(); toast('Батлагдлаа');
+  },
+  async unapprove() {
+    await savePost({ status: 'draft' });
+    renderComposeState(); toast('Ноорог болголоо, одоо засаж болно');
+  },
+  async retry() {
+    const f = readForm();
+    if (!f.scheduled_at) throw new Error('Нийтлэх өдөр, цагаа сонгоно уу.');
+    await savePost({ ...f, status: 'approved' });
+    renderComposeState(); toast('Дахин оролдохоор товлогдлоо');
+  },
+  async delete() {
+    if (!confirm('Энэ постыг бүр мөсөн устгах уу? Буцаах боломжгүй.')) return;
+    const { error } = await sb.from('posts').delete().eq('id', state.editing.id);
+    if (error) throw error;
+    toast('Устгагдлаа'); location.hash = '#calendar';
+  }
+};
+
+// ---------- Тохиргоо ----------
+const PF = { brand_name: 'p_brand', about: 'p_about', audience: 'p_audience', tone: 'p_tone', sample_posts: 'p_samples' };
+async function loadProfile() {
+  hide($('profileMsg'));
+  const { data, error } = await sb.from('profile').select('*').maybeSingle();
+  if (error) { showError($('profileMsg'), error); return; }
+  for (const [k, id] of Object.entries(PF)) $(id).value = data?.[k] || '';
+}
+$('profileForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('profileMsg'); hide(msg); $('profileSave').disabled = true;
+  const row = { user_id: state.user.id };
+  for (const [k, id] of Object.entries(PF)) row[k] = $(id).value.trim();
+  const { error } = await sb.from('profile').upsert(row);
+  $('profileSave').disabled = false;
+  if (error) { msg.className = 'note error'; msg.textContent = friendlyError(error); }
+  else { msg.className = 'note ok'; msg.textContent = 'Хадгалагдлаа.'; }
+});
+
+// ---------- Эхлүүлэх ----------
+sb.auth.getSession().then(({ data }) => {
+  if (!data.session) $('loginView').classList.remove('hidden');
+});
+</script>
+</body>
+</html>

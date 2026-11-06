@@ -163,6 +163,10 @@
 
   .channel { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
   .muted { color: var(--muted); }
+  .ai-box { margin-top: 12px; padding: 14px; border-radius: var(--radius); background: var(--primary-soft); }
+  .ai-box .btn-row { margin-top: 10px; }
+  .ai-box input { background: var(--bg); }
+  .ai-note { font-size: 13px; color: var(--muted); margin-top: 8px; }
   .counter { text-align: right; font-size: 13px; color: var(--muted); margin-top: 4px; }
 
   @media (min-width: 760px) {
@@ -235,9 +239,22 @@
           <label class="field"><span>Сэдэв</span>
             <input type="text" id="topic" placeholder="Жишээ нь: шинэ серум, өвлийн арьс арчилгаа"></label>
 
+          <div class="ai-box">
+            <label class="field" style="margin-top:0"><span>Юуг өөрчлөх вэ? (заавал биш)</span>
+              <input type="text" id="aiInstruction" placeholder="Жишээ нь: илүү богино, асуултаар эхэл"></label>
+            <div class="btn-row">
+              <button type="button" class="btn primary" id="aiBtn">AI-аар бичүүлэх</button>
+            </div>
+            <div id="aiErr" class="note error hidden"></div>
+            <div class="ai-note">AI зөвхөн таны Тохиргоонд бичсэн мэдээллийг ашиглана. Үр дүнг заавал уншиж шалгаад, засаад батлаарай.</div>
+          </div>
+
           <label class="field"><span id="bodyLabel">Постын бичвэр</span>
             <textarea id="body" class="big" placeholder="Бичвэрээ энд бичнэ үү"></textarea></label>
           <div class="counter" id="counter">0 тэмдэгт</div>
+
+          <label class="field" id="scriptField"><span>Reel-ийн хэлэх үг (нийтлэгдэхгүй, танд зориулсан)</span>
+            <textarea id="script" placeholder="Видеон дээр хэлэх үг"></textarea></label>
 
           <label class="field"><span>Нийтлэх өдөр, цаг</span></label>
           <div class="two">
@@ -269,7 +286,14 @@
           <textarea id="p_tone" placeholder="Жишээ нь: элегант, минимал, тайван хэрнээ гал цогтой, итгэл төрүүлэхүйц."></textarea></label>
         <label class="field"><span>Миний бичсэн жишээ постууд</span>
           <textarea id="p_samples" class="big" placeholder="2-3 постоо хуулж оруулна уу. Постуудын хооронд --- гэж зурна уу."></textarea></label>
-        <p class="hint">AI энэ мэдээллийг ашиглан таны хэв маягаар бичнэ (2-р шатанд).</p>
+        <p class="hint">AI энэ мэдээллийг ашиглан таны хэв маягаар бичнэ.</p>
+
+        <h2>AI</h2>
+        <label class="field"><span>Аль AI-аар бичүүлэх вэ</span>
+          <select id="p_ai">
+            <option value="claude">Claude (Anthropic)</option>
+            <option value="openai">OpenAI</option>
+          </select></label>
 
         <div id="profileMsg" class="note hidden"></div>
         <div class="btn-row"><button class="btn primary block" type="submit" id="profileSave">Хадгалах</button></div>
@@ -327,7 +351,7 @@ function toast(msg) {
 function friendlyError(e) {
   const m = (e && (e.message || e.error_description)) || String(e);
   if (/Invalid login credentials/i.test(m)) return 'Имэйл эсвэл нууц үг буруу байна.';
-  if (/Failed to fetch|NetworkError|network/i.test(m)) return 'Интернэт холболтоо шалгаад дахин оролдоно уу.';
+  if (/Failed to fetch|Failed to send a request|NetworkError|network/i.test(m)) return 'Интернэт холболтоо шалгаад дахин оролдоно уу.';
   if (/JWT|session|not authenticated/i.test(m)) return 'Нэвтрэх хугацаа дууссан байна. Дахин нэвтэрнэ үү.';
   if (/[А-Яа-яӨөҮүЁё]/.test(m)) return m; // манай серверийн монгол алдаа
   return 'Алдаа гарлаа: ' + m;
@@ -456,12 +480,14 @@ $('timeChips').addEventListener('click', (e) => {
   $('time').value = b.dataset.time; syncChips();
 });
 $('time').addEventListener('input', syncChips);
-$('body').addEventListener('input', () => { $('counter').textContent = `${$('body').value.length} тэмдэгт`; });
+$('body').addEventListener('input', () => { $('counter').textContent = `${$('body').value.length} тэмдэгт`; syncChips(); });
 
 function syncChips() {
   document.querySelectorAll('#kindChips .chip').forEach(b => b.setAttribute('aria-pressed', b.dataset.kind === form.kind));
   document.querySelectorAll('#channelChips .chip').forEach(b => b.setAttribute('aria-pressed', form.channels.includes(b.dataset.ch)));
   $('bodyLabel').textContent = form.kind === 'reel' ? 'Reel-ийн тайлбар бичвэр' : 'Постын бичвэр';
+  $('scriptField').classList.toggle('hidden', form.kind !== 'reel');
+  $('aiBtn').textContent = $('body').value.trim() ? 'Дахин бичүүлэх' : 'AI-аар бичүүлэх';
   $('timeChips').innerHTML = TIME_SLOTS[form.kind].map(t =>
     `<button type="button" class="chip" data-time="${t}" aria-pressed="${$('time').value === t}">${t}</button>`).join('');
 }
@@ -480,6 +506,9 @@ async function openCompose(id) {
   form.channels = p?.channels || ['facebook', 'instagram'];
   $('topic').value = p?.topic || '';
   $('body').value = p?.body || '';
+  $('script').value = p?.script || '';
+  $('aiInstruction').value = '';
+  hide($('aiErr'));
   $('counter').textContent = `${$('body').value.length} тэмдэгт`;
   if (p?.scheduled_at) { const d = new Date(p.scheduled_at); $('date').value = ymd(d); $('time').value = hm(d); }
   else { $('date').value = state.newDay || state.selected || ymd(new Date()); $('time').value = ''; }
@@ -530,6 +559,7 @@ function readForm() {
   return {
     kind: form.kind, channels: form.channels,
     topic: $('topic').value.trim(), body: $('body').value.trim(),
+    script: form.kind === 'reel' ? $('script').value.trim() : '',
     scheduled_at: date && time ? new Date(`${date}T${time}`).toISOString() : null
   };
 }
@@ -579,13 +609,43 @@ const actions = {
   }
 };
 
+// ---------- AI ----------
+$('aiBtn').addEventListener('click', async () => {
+  const btn = $('aiBtn'), err = $('aiErr');
+  hide(err);
+  const topic = $('topic').value.trim(), current = $('body').value.trim();
+  if (!topic && !current) { showError(err, new Error('Эхлээд сэдвээ бичнэ үү.')); return; }
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Бичиж байна… (20-60 секунд)';
+  try {
+    const { data, error } = await sb.functions.invoke('generate', {
+      body: { topic, current, kind: form.kind, instruction: $('aiInstruction').value.trim() }
+    });
+    if (error) {
+      let msg = error.message;
+      try { const j = await error.context.json(); if (j?.error) msg = j.error; } catch (_) {}
+      throw new Error(msg);
+    }
+    if (!data?.caption) throw new Error('AI хоосон хариу өглөө. Дахин оролдоно уу.');
+    $('body').value = data.caption;
+    if (form.kind === 'reel') $('script').value = data.script || '';
+    $('counter').textContent = `${$('body').value.length} тэмдэгт`;
+    $('aiInstruction').value = '';
+    toast('Бичлээ. Уншаад, засаад хадгална уу.');
+  } catch (e) {
+    showError(err, e);
+  } finally {
+    btn.disabled = false; btn.textContent = label; syncChips();
+  }
+});
+
 // ---------- Тохиргоо ----------
-const PF = { brand_name: 'p_brand', about: 'p_about', audience: 'p_audience', tone: 'p_tone', sample_posts: 'p_samples' };
+const PF = { brand_name: 'p_brand', about: 'p_about', audience: 'p_audience', tone: 'p_tone', sample_posts: 'p_samples', ai_provider: 'p_ai' };
 async function loadProfile() {
   hide($('profileMsg'));
   const { data, error } = await sb.from('profile').select('*').maybeSingle();
   if (error) { showError($('profileMsg'), error); return; }
-  for (const [k, id] of Object.entries(PF)) $(id).value = data?.[k] || '';
+  for (const [k, id] of Object.entries(PF)) $(id).value = data?.[k] || (k === 'ai_provider' ? 'claude' : '');
 }
 $('profileForm').addEventListener('submit', async (e) => {
   e.preventDefault();

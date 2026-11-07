@@ -177,6 +177,11 @@
   .steps li { margin: 4px 0; }
   .page-opt { display: flex; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
   .page-opt input { width: 22px; height: 22px; }
+  .poster-box { margin-top: 16px; padding: 14px; border-radius: var(--radius); border: 1px solid var(--line); }
+  .poster-box h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+  #posterCanvas { width: 100%; height: auto; display: block; margin-top: 12px; border-radius: 10px; background: var(--surface); }
+  .check { display: flex; gap: 10px; align-items: center; margin-top: 12px; font-size: 15px; }
+  .check input { width: 20px; height: 20px; }
   .counter { text-align: right; font-size: 13px; color: var(--muted); margin-top: 4px; }
 
   @media (min-width: 760px) {
@@ -265,6 +270,31 @@
 
           <label class="field" id="scriptField"><span>Reel-ийн хэлэх үг (нийтлэгдэхгүй, танд зориулсан)</span>
             <textarea id="script" placeholder="Видеон дээр хэлэх үг"></textarea></label>
+
+          <div class="poster-box" id="posterBox">
+            <h3>Постер үүсгэгч</h3>
+            <div class="ai-note" style="margin-top:0">AI дэвсгэр зурна, дээр нь таны жинхэнэ бүтээгдэхүүний зураг, монгол гарчиг байрлана.</div>
+            <div class="btn-row" style="margin-top:12px">
+              <label class="btn file-btn">Бүтээгдэхүүний зураг<input type="file" id="prodInput" accept="image/*"></label>
+            </div>
+            <label class="check"><input type="checkbox" id="prodMultiply" checked> Бүтээгдэхүүний цагаан дэвсгэрийг нуух</label>
+            <label class="field"><span>Гарчиг (постер дээр)</span>
+              <input type="text" id="pHeadline" maxlength="80" placeholder="Жишээ нь: Өвлийн арьсны тайван хамгаалалт"></label>
+            <label class="field"><span>Уриалга</span>
+              <input type="text" id="pCta" maxlength="40" value="Мессеж бичээрэй"></label>
+            <label class="field"><span>Загвар</span></label>
+            <div class="chips" id="layoutChips">
+              <button type="button" class="chip" data-layout="top" aria-pressed="true">Гарчиг дээр</button>
+              <button type="button" class="chip" data-layout="band" aria-pressed="false">Доор цагаан зурвас</button>
+            </div>
+            <canvas id="posterCanvas" width="1080" height="1350"></canvas>
+            <div class="btn-row">
+              <button type="button" class="btn" id="bgBtn">AI дэвсгэр зурах</button>
+              <button type="button" class="btn primary" id="posterUse">Постерыг хавсаргах</button>
+            </div>
+            <div id="posterErr" class="note error hidden"></div>
+            <div class="ai-note">AI дэвсгэр нэг удаа зуруулахад ойролцоогоор $0.03–0.20. Дэвсгэргүйгээр энгийн дэвсгэрээр үнэгүй хийж болно.</div>
+          </div>
 
           <label class="field"><span id="mediaLabel">Зураг эсвэл видео</span></label>
           <div class="media-box">
@@ -407,7 +437,7 @@ sb.auth.onAuthStateChange((_event, session) => {
   const changed = (user?.id || null) !== (state.user?.id || null);
   state.user = user;
   if (!changed) return;
-  if (user) { $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden'); $('whoami').textContent = user.email; loadChannels().then(route); }
+  if (user) { $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden'); $('whoami').textContent = user.email; loadChannels().then(route); sb.from('profile').select('*').maybeSingle().then(({ data }) => { state.profile = data || {}; }); }
   else { $('appView').classList.add('hidden'); $('loginView').classList.remove('hidden'); $('loginPass').value = ''; }
 });
 
@@ -534,6 +564,7 @@ function syncChips() {
   $('mediaLabel').textContent = form.kind === 'reel' ? 'Reel видео (заавал)' : 'Зураг (заавал биш; Instagram-д заавал)';
   $('bodyLabel').textContent = form.kind === 'reel' ? 'Reel-ийн тайлбар бичвэр' : 'Постын бичвэр';
   $('scriptField').classList.toggle('hidden', form.kind !== 'reel');
+  $('posterBox').classList.toggle('hidden', form.kind !== 'poster');
   $('aiBtn').textContent = $('body').value.trim() ? 'Дахин бичүүлэх' : 'AI-аар бичүүлэх';
   $('timeChips').innerHTML = TIME_SLOTS[form.kind].map(t =>
     `<button type="button" class="chip" data-time="${t}" aria-pressed="${$('time').value === t}">${t}</button>`).join('');
@@ -558,6 +589,7 @@ async function openCompose(id) {
   renderMedia();
   $('aiInstruction').value = '';
   hide($('aiErr'));
+  poster.bg = null; poster.prod = null; $('pHeadline').value = ''; hide($('posterErr')); drawPoster();
   $('counter').textContent = `${$('body').value.length} тэмдэгт`;
   if (p?.scheduled_at) { const d = new Date(p.scheduled_at); $('date').value = ymd(d); $('time').value = hm(d); }
   else { $('date').value = state.newDay || state.selected || ymd(new Date()); $('time').value = ''; }
@@ -728,6 +760,120 @@ $('mediaRemove').addEventListener('click', () => {
   form.media_path = null; form.media_type = null; renderMedia();
 });
 
+// ---------- Постер үүсгэгч ----------
+const poster = { bg: null, prod: null, layout: 'top' };
+function loadImg(src) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+}
+function wrapLines(g, text, maxW) {
+  const words = text.split(/\s+/).filter(Boolean), lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? line + ' ' + w : w;
+    if (g.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, 3);
+}
+async function drawPoster() {
+  const c = $('posterCanvas'), g = c.getContext('2d'), W = c.width, H = c.height;
+  try { await document.fonts.load('600 72px Inter', 'Өө'); await document.fonts.load('500 30px Inter', 'Үү'); } catch (_) {}
+  g.globalCompositeOperation = 'source-over';
+  // Дэвсгэр
+  if (poster.bg) {
+    const s = Math.max(W / poster.bg.width, H / poster.bg.height);
+    const w = poster.bg.width * s, h = poster.bg.height * s;
+    g.drawImage(poster.bg, (W - w) / 2, (H - h) / 2, w, h);
+  } else {
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#f4f3ef'); gr.addColorStop(1, '#e3e8e4');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  }
+  const band = poster.layout === 'band';
+  // Бүтээгдэхүүн
+  if (poster.prod) {
+    const maxW = W * 0.62, maxH = H * (band ? 0.5 : 0.5);
+    const s = Math.min(maxW / poster.prod.width, maxH / poster.prod.height);
+    const w = poster.prod.width * s, h = poster.prod.height * s;
+    const bottom = band ? H * 0.64 : H * 0.86;
+    const x = (W - w) / 2, y = bottom - h;
+    g.save(); g.fillStyle = 'rgba(0,0,0,0.10)'; g.filter = 'blur(18px)';
+    g.beginPath(); g.ellipse(W / 2, bottom - 6, w * 0.42, 22, 0, 0, Math.PI * 2); g.fill(); g.restore();
+    g.save(); if ($('prodMultiply').checked) g.globalCompositeOperation = 'multiply';
+    g.drawImage(poster.prod, x, y, w, h); g.restore();
+  }
+  // Бичвэр
+  const brand = (state.profile?.brand_name || '').toUpperCase();
+  const head = $('pHeadline').value.trim();
+  const cta = $('pCta').value.trim();
+  if (band) {
+    g.fillStyle = 'rgba(255,255,255,0.94)'; g.fillRect(0, H * 0.67, W, H * 0.33);
+  } else {
+    const gr = g.createLinearGradient(0, 0, 0, H * 0.4);
+    gr.addColorStop(0, 'rgba(255,255,255,0.85)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H * 0.4);
+  }
+  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  let y = band ? H * 0.67 + 64 : 110;
+  if (brand) {
+    g.fillStyle = '#1f4d40'; g.font = '500 26px Inter';
+    if ('letterSpacing' in g) g.letterSpacing = '6px';
+    g.fillText(brand, W / 2, y); if ('letterSpacing' in g) g.letterSpacing = '0px';
+    y += 70;
+  }
+  if (head) {
+    g.fillStyle = '#1a1f1d'; g.font = `600 ${band ? 58 : 68}px Inter`;
+    for (const line of wrapLines(g, head, W * 0.84)) { g.fillText(line, W / 2, y); y += band ? 70 : 82; }
+  }
+  if (cta) {
+    g.font = '600 30px Inter';
+    const tw = g.measureText(cta).width + 72, th = 70;
+    const cy = band ? Math.min(y + th / 2 - 10, H - 40 - th / 2) : H - 60 - th / 2;
+    g.fillStyle = '#1f4d40';
+    g.beginPath(); g.roundRect((W - tw) / 2, cy - th / 2, tw, th, th / 2); g.fill();
+    g.fillStyle = '#ffffff'; g.textBaseline = 'middle'; g.fillText(cta, W / 2, cy + 1); g.textBaseline = 'alphabetic';
+  }
+}
+$('prodInput').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try { poster.prod = await loadImg(URL.createObjectURL(f)); drawPoster(); }
+  catch (_) { showError($('posterErr'), new Error('Бүтээгдэхүүний зургийг уншиж чадсангүй.')); }
+});
+$('prodMultiply').addEventListener('change', drawPoster);
+$('pHeadline').addEventListener('input', drawPoster);
+$('pCta').addEventListener('input', drawPoster);
+$('layoutChips').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-layout]'); if (!b) return;
+  poster.layout = b.dataset.layout;
+  document.querySelectorAll('#layoutChips .chip').forEach(x => x.setAttribute('aria-pressed', x === b));
+  drawPoster();
+});
+$('bgBtn').addEventListener('click', async () => {
+  const btn = $('bgBtn'), err = $('posterErr'); hide(err);
+  const label = btn.textContent; btn.disabled = true; btn.textContent = 'Зурж байна… (30-90 секунд)';
+  try {
+    const data = await callFn('image', { topic: $('topic').value.trim() || $('pHeadline').value.trim(), mood: state.profile?.tone || '' });
+    poster.bg = await loadImg(data.image); drawPoster(); toast('Дэвсгэр бэлэн. Таалагдахгүй бол дахин зуруулна уу.');
+  } catch (e) { showError(err, e); }
+  finally { btn.disabled = false; btn.textContent = poster.bg ? 'Өөр дэвсгэр зурах' : label; }
+});
+$('posterUse').addEventListener('click', async () => {
+  const err = $('posterErr'); hide(err);
+  if (!poster.prod && !$('pHeadline').value.trim()) { showError(err, new Error('Бүтээгдэхүүний зураг эсвэл гарчиг нэмнэ үү.')); return; }
+  await drawPoster();
+  const blob = await new Promise(r => $('posterCanvas').toBlob(r, 'image/jpeg', 0.92));
+  if (!blob) { showError(err, new Error('Постерыг хадгалж чадсангүй.')); return; }
+  const path = `${state.user.id}/${crypto.randomUUID()}.jpg`;
+  $('posterUse').disabled = true;
+  const { error } = await sb.storage.from('media').upload(path, blob, { contentType: 'image/jpeg' });
+  $('posterUse').disabled = false;
+  if (error) { showError(err, error); return; }
+  if (form.media_path && form.media_path !== form.savedMedia) sb.storage.from('media').remove([form.media_path]);
+  form.media_path = path; form.media_type = 'image'; renderMedia();
+  toast('Постер хавсаргагдлаа. Постоо хадгалах эсвэл батлахаа мартуузай.');
+});
+
 // ---------- Facebook холбох ----------
 async function callFn(name, body) {
   const { data, error } = await sb.functions.invoke(name, { body });
@@ -804,6 +950,7 @@ $('aiBtn').addEventListener('click', async () => {
     if (!data?.caption) throw new Error('AI хоосон хариу өглөө. Дахин оролдоно уу.');
     $('body').value = data.caption;
     if (form.kind === 'reel') $('script').value = data.script || '';
+    if (data.headline) { $('pHeadline').value = data.headline; drawPoster(); }
     $('counter').textContent = `${$('body').value.length} тэмдэгт`;
     $('aiInstruction').value = '';
     toast('Бичлээ. Уншаад, засаад хадгална уу.');
@@ -821,6 +968,7 @@ async function loadProfile() {
   loadChannels().then(renderFb);
   const { data, error } = await sb.from('profile').select('*').maybeSingle();
   if (error) { showError($('profileMsg'), error); return; }
+  state.profile = data || {};
   for (const [k, id] of Object.entries(PF)) $(id).value = data?.[k] || (k === 'ai_provider' ? 'claude' : '');
 }
 $('profileForm').addEventListener('submit', async (e) => {
@@ -831,7 +979,7 @@ $('profileForm').addEventListener('submit', async (e) => {
   const { error } = await sb.from('profile').upsert(row);
   $('profileSave').disabled = false;
   if (error) { msg.className = 'note error'; msg.textContent = friendlyError(error); }
-  else { msg.className = 'note ok'; msg.textContent = 'Хадгалагдлаа.'; }
+  else { msg.className = 'note ok'; msg.textContent = 'Хадгалагдлаа.'; state.profile = row; }
 });
 
 // ---------- Эхлүүлэх ----------

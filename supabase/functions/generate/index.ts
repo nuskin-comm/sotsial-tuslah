@@ -29,8 +29,9 @@ const SCHEMA = {
   properties: {
     caption: { type: "string", description: "Нийтлэгдэх бичвэр (hashtag-тай)" },
     script: { type: "string", description: "Зөвхөн reel-д: видеон дээр хэлэх үг. Постерт хоосон." },
+    headline: { type: "string", description: "Постер дээр томоор бичих гарчиг: 2-6 үг, emoji, hashtag-гүй" },
   },
-  required: ["caption", "script"],
+  required: ["caption", "script", "headline"],
   additionalProperties: false,
 };
 
@@ -46,6 +47,7 @@ function buildPrompt(profile: Record<string, string>, input: Record<string, stri
 
 ХЭЛБЭР:
 - Постер: 60–150 үгтэй, эхний мөр нь анхаарал татсан, төгсгөлд нь зөөлөн уриалга (жишээ нь мессеж бичихийг урих), дараа нь 3–6 hashtag. "script" хоосон.
+- "headline": постерын зураг дээр томоор бичигдэх богино, элегант гарчиг (2-6 үг). Зохиомол тоо, амлалтгүй.
 - Reel: "caption" нь богино (20–60 үг) тайлбар + 3–6 hashtag. "script" нь 20–40 секундийн видеон дээр хэлэх үг, хэсэг бүрийг шинэ мөрөнд.
 
 ХЭРЭГЛЭГЧИЙН ТУХАЙ:
@@ -148,6 +150,7 @@ Deno.serve(async (req) => {
     return reply(200, {
       caption: String(out.caption || "").trim(),
       script: kind === "reel" ? String(out.script || "").trim() : "",
+      headline: String(out.headline || "").trim().slice(0, 80),
       provider,
     });
   } catch (e) {

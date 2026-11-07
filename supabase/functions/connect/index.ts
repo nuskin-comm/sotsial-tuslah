@@ -38,7 +38,19 @@ async function pagesFor(userToken: string) {
     grant_type: "fb_exchange_token", client_id: appId, client_secret: secret, fb_exchange_token: userToken,
   });
   const acc = await graph("/me/accounts", { fields: "id,name,access_token,tasks", access_token: ex.access_token, limit: "100" });
-  return (acc.data || []) as { id: string; name: string; access_token: string; tasks?: string[] }[];
+  const pages = (acc.data || []) as { id: string; name: string; access_token: string; tasks?: string[] }[];
+  if (!pages.length) {
+    // Яагаад хуудас олдсонгүйг энгийнээр тайлбарлана
+    const perms = await graph("/me/permissions", { access_token: ex.access_token }).catch(() => ({ data: [] }));
+    const granted = new Set((perms.data || []).filter((p: { status: string }) => p.status === "granted").map((p: { permission: string }) => p.permission));
+    const need = ["pages_show_list", "pages_manage_posts", "pages_read_engagement"];
+    const missing = need.filter((p) => !granted.has(p));
+    if (missing.length) {
+      throw new UserError(`Токен авахдаа дараах эрхийг зөвшөөрөөгүй байна: ${missing.join(", ")}. Graph API Explorer дээр "Generate Access Token" дахин дарж, бүх эрхийг зөвшөөрнө үү.`);
+    }
+    throw new UserError("Эрхүүд зөв байна, гэхдээ хуудсаа сонгоогүй байна. Graph API Explorer дээр \"Generate Access Token\" дахин дараад, Facebook-ийн цонхонд \"Edit access\" дарж Nu Skin хуудсаа ✅ чагтлаад шинэ токеноо оруулна уу.");
+  }
+  return pages;
 }
 
 Deno.serve(async (req) => {
@@ -57,7 +69,6 @@ Deno.serve(async (req) => {
     const userToken = String(body.user_token || "").trim();
     if (!userToken) return reply(400, { error: "Токеноо оруулна уу." });
     const pages = await pagesFor(userToken);
-    if (!pages.length) throw new UserError("Энэ токеноор нэг ч хуудас олдсонгүй. Токен авахдаа хуудсаа сонгож, pages_show_list эрх өгсөн эсэхээ шалгана уу.");
 
     if (body.action === "list_pages") {
       return reply(200, { pages: pages.map((p) => ({ id: p.id, name: p.name })) });

@@ -167,6 +167,16 @@
   .ai-box .btn-row { margin-top: 10px; }
   .ai-box input { background: var(--bg); }
   .ai-note { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .media-box { margin-top: 8px; }
+  .media-preview { margin-top: 10px; border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .media-preview img, .media-preview video { display: block; width: 100%; max-height: 420px; object-fit: contain; background: #000; }
+  .file-btn { position: relative; overflow: hidden; }
+  .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .chip.off { opacity: .55; }
+  .steps { margin: 8px 0 0; padding-left: 20px; font-size: 15px; color: var(--muted); }
+  .steps li { margin: 4px 0; }
+  .page-opt { display: flex; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
+  .page-opt input { width: 22px; height: 22px; }
   .counter { text-align: right; font-size: 13px; color: var(--muted); margin-top: 4px; }
 
   @media (min-width: 760px) {
@@ -256,6 +266,16 @@
           <label class="field" id="scriptField"><span>Reel-ийн хэлэх үг (нийтлэгдэхгүй, танд зориулсан)</span>
             <textarea id="script" placeholder="Видеон дээр хэлэх үг"></textarea></label>
 
+          <label class="field"><span id="mediaLabel">Зураг эсвэл видео</span></label>
+          <div class="media-box">
+            <div class="btn-row" style="margin-top:0">
+              <label class="btn file-btn" id="mediaPick">Файл сонгох<input type="file" id="mediaInput" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"></label>
+              <button type="button" class="btn danger hidden" id="mediaRemove">Файлыг хасах</button>
+            </div>
+            <div class="ai-note" id="mediaHint">Зураг: JPG/PNG. Reel: босоо (9:16) MP4 видео, 3–90 секунд. Хамгийн ихдээ 50 МБ.</div>
+            <div id="mediaPreview" class="media-preview hidden"></div>
+          </div>
+
           <label class="field"><span>Нийтлэх өдөр, цаг</span></label>
           <div class="two">
             <input type="date" id="date" aria-label="Өдөр">
@@ -300,7 +320,20 @@
       </form>
 
       <h2>Холбосон сувгууд</h2>
-      <div class="channel"><div><strong>Facebook хуудас</strong><div class="muted" style="font-size:14px">3-р шатанд холбоно</div></div><span class="badge s-draft">Холбоогүй</span></div>
+      <div class="channel"><div><strong>Facebook хуудас</strong><div class="muted" style="font-size:14px" id="fbInfo">Ачаалж байна…</div></div><span class="badge s-draft" id="fbBadge">Холбоогүй</span></div>
+      <div id="fbConnected" class="hidden"><div class="btn-row"><button type="button" class="btn" id="fbReconnectBtn">Дахин холбох</button><button type="button" class="btn danger" id="fbDisconnect">Салгах</button></div></div>
+      <div id="fbConnect" class="hidden">
+        <ol class="steps">
+          <li>Graph API Explorer дээрээс өөрийн апп-аа сонгож, хэрэглэгчийн токен (User Token) аваарай.</li>
+          <li>Токеноо доорх талбарт буулгаад «Хуудсуудыг харах» дарна.</li>
+        </ol>
+        <label class="field"><span>Хэрэглэгчийн токен (User Token)</span>
+          <textarea id="fbToken" style="min-height:90px" placeholder="EAA… гэж эхэлсэн урт мөр" autocomplete="off" spellcheck="false"></textarea></label>
+        <div class="btn-row"><button type="button" class="btn primary" id="fbListBtn">Хуудсуудыг харах</button></div>
+        <div id="fbPages"></div>
+        <div id="fbErr" class="note error hidden"></div>
+        <p class="hint">Токен зөвхөн серверт хадгалагдана. Энэ хуудас үүнийг дахин харуулахгүй.</p>
+      </div>
       <div class="channel"><div><strong>Instagram</strong><div class="muted" style="font-size:14px">4-р шатанд холбоно</div></div><span class="badge s-draft">Холбоогүй</span></div>
 
       <h2>Бүртгэл</h2>
@@ -335,7 +368,7 @@ const DOW_LONG = ['Ням','Даваа','Мягмар','Лхагва','Пүрэ�
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
-const state = { user: null, month: startOfMonth(new Date()), selected: ymd(new Date()), posts: [], editing: null };
+const state = { channels: {}, user: null, month: startOfMonth(new Date()), selected: ymd(new Date()), posts: [], editing: null };
 
 // ---------- Туслах функцууд ----------
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -374,9 +407,17 @@ sb.auth.onAuthStateChange((_event, session) => {
   const changed = (user?.id || null) !== (state.user?.id || null);
   state.user = user;
   if (!changed) return;
-  if (user) { $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden'); $('whoami').textContent = user.email; route(); }
+  if (user) { $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden'); $('whoami').textContent = user.email; loadChannels().then(route); }
   else { $('appView').classList.add('hidden'); $('loginView').classList.remove('hidden'); $('loginPass').value = ''; }
 });
+
+// ---------- Сувгууд ----------
+async function loadChannels() {
+  const { data, error } = await sb.rpc('my_channels');
+  if (error) { toast(friendlyError(error)); return; }
+  state.channels = Object.fromEntries((data || []).map(c => [c.platform, c]));
+}
+const CH_NAME = { facebook: 'Facebook', instagram: 'Instagram' };
 
 // ---------- Чиглүүлэлт ----------
 window.addEventListener('hashchange', () => state.user && route());
@@ -484,7 +525,13 @@ $('body').addEventListener('input', () => { $('counter').textContent = `${$('bod
 
 function syncChips() {
   document.querySelectorAll('#kindChips .chip').forEach(b => b.setAttribute('aria-pressed', b.dataset.kind === form.kind));
-  document.querySelectorAll('#channelChips .chip').forEach(b => b.setAttribute('aria-pressed', form.channels.includes(b.dataset.ch)));
+  document.querySelectorAll('#channelChips .chip').forEach(b => {
+    const on = !!state.channels[b.dataset.ch];
+    b.setAttribute('aria-pressed', form.channels.includes(b.dataset.ch));
+    b.classList.toggle('off', !on);
+    b.textContent = CH_NAME[b.dataset.ch] + (on ? '' : ' (холбоогүй)');
+  });
+  $('mediaLabel').textContent = form.kind === 'reel' ? 'Reel видео (заавал)' : 'Зураг (заавал биш; Instagram-д заавал)';
   $('bodyLabel').textContent = form.kind === 'reel' ? 'Reel-ийн тайлбар бичвэр' : 'Постын бичвэр';
   $('scriptField').classList.toggle('hidden', form.kind !== 'reel');
   $('aiBtn').textContent = $('body').value.trim() ? 'Дахин бичүүлэх' : 'AI-аар бичүүлэх';
@@ -507,6 +554,8 @@ async function openCompose(id) {
   $('topic').value = p?.topic || '';
   $('body').value = p?.body || '';
   $('script').value = p?.script || '';
+  form.media_path = p?.media_path || null; form.media_type = p?.media_type || null; form.savedMedia = form.media_path;
+  renderMedia();
   $('aiInstruction').value = '';
   hide($('aiErr'));
   $('counter').textContent = `${$('body').value.length} тэмдэгт`;
@@ -560,6 +609,7 @@ function readForm() {
     kind: form.kind, channels: form.channels,
     topic: $('topic').value.trim(), body: $('body').value.trim(),
     script: form.kind === 'reel' ? $('script').value.trim() : '',
+    media_path: form.media_path || null, media_type: form.media_type || null,
     scheduled_at: date && time ? new Date(`${date}T${time}`).toISOString() : null
   };
 }
@@ -570,6 +620,8 @@ async function savePost(fields) {
   const { data, error } = await q.select().single();
   if (error) throw error;
   state.editing = data;
+  if (form.savedMedia && form.savedMedia !== data.media_path) sb.storage.from('media').remove([form.savedMedia]);
+  form.savedMedia = data.media_path;
   if (!p) history.replaceState(null, '', '#compose/' + data.id);
   if (data.scheduled_at) state.selected = ymd(new Date(data.scheduled_at));
   return data;
@@ -587,6 +639,7 @@ const actions = {
     if (!f.body) throw new Error('Бичвэр хоосон байна.');
     if (!f.channels.length) throw new Error('Дор хаяж нэг сувгаа сонгоно уу.');
     if (!f.scheduled_at) throw new Error('Нийтлэх өдөр, цагаа сонгоно уу.');
+    checkPublishable(f);
     if (new Date(f.scheduled_at) < new Date() && !confirm('Сонгосон цаг өнгөрсөн байна. Батлавал удахгүй шууд нийтлэгдэнэ. Үргэлжлүүлэх үү?')) return;
     await savePost({ ...f, status: 'approved' });
     renderComposeState(); toast('Батлагдлаа');
@@ -598,6 +651,7 @@ const actions = {
   async retry() {
     const f = readForm();
     if (!f.scheduled_at) throw new Error('Нийтлэх өдөр, цагаа сонгоно уу.');
+    checkPublishable(f);
     await savePost({ ...f, status: 'approved' });
     renderComposeState(); toast('Дахин оролдохоор товлогдлоо');
   },
@@ -605,9 +659,100 @@ const actions = {
     if (!confirm('Энэ постыг бүр мөсөн устгах уу? Буцаах боломжгүй.')) return;
     const { error } = await sb.from('posts').delete().eq('id', state.editing.id);
     if (error) throw error;
+    if (state.editing.media_path) await sb.storage.from('media').remove([state.editing.media_path]);
     toast('Устгагдлаа'); location.hash = '#calendar';
   }
 };
+
+// ---------- Зураг / видео ----------
+function checkPublishable(f) {
+  const missing = f.channels.filter(c => !state.channels[c]);
+  if (missing.length) throw new Error(`${missing.map(c => CH_NAME[c]).join(', ')} холбогдоогүй байна. Тохиргооноос холбох эсвэл энэ сувгийг сонголтоос хасна уу.`);
+  if (f.kind === 'reel' && f.media_type !== 'video') throw new Error('Reel-д видео хавсаргана уу.');
+  if (f.channels.includes('instagram') && !f.media_path) throw new Error('Instagram-д зураг эсвэл видео заавал хэрэгтэй.');
+}
+async function renderMedia() {
+  const box = $('mediaPreview');
+  $('mediaRemove').classList.toggle('hidden', !form.media_path);
+  if (!form.media_path) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  const { data } = await sb.storage.from('media').createSignedUrl(form.media_path, 3600);
+  if (!data?.signedUrl) { box.classList.add('hidden'); return; }
+  box.innerHTML = form.media_type === 'video'
+    ? `<video src="${esc(data.signedUrl)}" controls playsinline preload="metadata"></video>`
+    : `<img src="${esc(data.signedUrl)}" alt="Хавсаргасан зураг">`;
+  box.classList.remove('hidden');
+}
+$('mediaInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  const err = $('composeErr'); hide(err);
+  if (file.size > 50 * 1024 * 1024) { showError(err, new Error('Файл 50 МБ-аас том байна. Жижиг хувилбарыг сонгоно уу.')); return; }
+  const isVideo = file.type.startsWith('video/');
+  const ext = (file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg')).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const path = `${state.user.id}/${crypto.randomUUID()}.${ext}`;
+  const pick = $('mediaPick'); pick.classList.add('hidden');
+  toast('Файл хуулж байна…');
+  const { error } = await sb.storage.from('media').upload(path, file, { contentType: file.type, upsert: false });
+  pick.classList.remove('hidden');
+  if (error) { showError(err, error); return; }
+  // өмнөх хадгалагдаагүй файлыг устгана
+  if (form.media_path && form.media_path !== form.savedMedia) sb.storage.from('media').remove([form.media_path]);
+  form.media_path = path; form.media_type = isVideo ? 'video' : 'image';
+  renderMedia(); toast('Файл орлоо. Постоо хадгалахаа мартуузай.');
+});
+$('mediaRemove').addEventListener('click', () => {
+  if (form.media_path && form.media_path !== form.savedMedia) sb.storage.from('media').remove([form.media_path]);
+  form.media_path = null; form.media_type = null; renderMedia();
+});
+
+// ---------- Facebook холбох ----------
+async function callFn(name, body) {
+  const { data, error } = await sb.functions.invoke(name, { body });
+  if (error) {
+    let msg = error.message;
+    try { const j = await error.context.json(); if (j?.error) msg = j.error; } catch (_) {}
+    throw new Error(msg);
+  }
+  return data;
+}
+function renderFb() {
+  const fb = state.channels.facebook;
+  $('fbBadge').textContent = fb ? 'Холбогдсон' : 'Холбоогүй';
+  $('fbBadge').className = 'badge ' + (fb ? 's-approved' : 's-draft');
+  $('fbInfo').textContent = fb ? fb.account_name + (fb.last_error ? ' — ' + fb.last_error : '') : 'Холбоогүй байна';
+  $('fbConnected').classList.toggle('hidden', !fb);
+  $('fbConnect').classList.toggle('hidden', !!fb);
+  $('fbPages').innerHTML = ''; hide($('fbErr'));
+}
+$('fbReconnectBtn').addEventListener('click', () => { $('fbConnected').classList.add('hidden'); $('fbConnect').classList.remove('hidden'); });
+$('fbDisconnect').addEventListener('click', async () => {
+  if (!confirm('Facebook хуудсыг салгах уу? Батлагдсан постууд Facebook-т нийтлэгдэхгүй болно.')) return;
+  const { error } = await sb.rpc('disconnect_channel', { p_platform: 'facebook' });
+  if (error) { toast(friendlyError(error)); return; }
+  await loadChannels(); renderFb(); toast('Салгалаа');
+});
+$('fbListBtn').addEventListener('click', async () => {
+  const btn = $('fbListBtn'), err = $('fbErr'); hide(err);
+  const tok = $('fbToken').value.trim();
+  if (!tok) { showError(err, new Error('Токеноо буулгана уу.')); return; }
+  btn.disabled = true;
+  try {
+    const { pages } = await callFn('connect', { action: 'list_pages', user_token: tok });
+    $('fbPages').innerHTML = '<p class="hint" style="margin-top:16px">Аль хуудсаа холбох вэ?</p>' +
+      pages.map((p, i) => `<label class="page-opt"><input type="radio" name="fbPage" value="${esc(p.id)}" ${i === 0 ? 'checked' : ''}>${esc(p.name)}</label>`).join('') +
+      '<div class="btn-row"><button type="button" class="btn primary block" id="fbSaveBtn">Энэ хуудсыг холбох</button></div>';
+    $('fbSaveBtn').onclick = async () => {
+      hide(err); $('fbSaveBtn').disabled = true;
+      try {
+        const page_id = document.querySelector('input[name=fbPage]:checked').value;
+        const r = await callFn('connect', { action: 'save_page', user_token: tok, page_id });
+        $('fbToken').value = '';
+        await loadChannels(); renderFb(); toast(`«${r.name}» холбогдлоо`);
+      } catch (e) { showError(err, e); $('fbSaveBtn').disabled = false; }
+    };
+  } catch (e) { showError(err, e); }
+  finally { btn.disabled = false; }
+});
 
 // ---------- AI ----------
 $('aiBtn').addEventListener('click', async () => {
@@ -643,6 +788,7 @@ $('aiBtn').addEventListener('click', async () => {
 const PF = { brand_name: 'p_brand', about: 'p_about', audience: 'p_audience', tone: 'p_tone', sample_posts: 'p_samples', ai_provider: 'p_ai' };
 async function loadProfile() {
   hide($('profileMsg'));
+  loadChannels().then(renderFb);
   const { data, error } = await sb.from('profile').select('*').maybeSingle();
   if (error) { showError($('profileMsg'), error); return; }
   for (const [k, id] of Object.entries(PF)) $(id).value = data?.[k] || (k === 'ai_provider' ? 'claude' : '');

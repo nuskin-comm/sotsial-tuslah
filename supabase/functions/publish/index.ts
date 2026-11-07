@@ -11,6 +11,7 @@ class StillProcessing extends Error {} // Instagram видео боловсру�
 type Post = {
   id: string; user_id: string; kind: string; body: string; channels: string[];
   media_path: string | null; media_type: string | null; external_ids: Record<string, string>;
+  extra_media?: string[];
 };
 type Channel = { platform: string; account_id: string; access_token: string };
 
@@ -37,6 +38,7 @@ async function fbPost(url: string, params: Record<string, string>, headers: Reco
 }
 
 async function signedUrl(db: SupabaseClient, path: string) {
+  if (/^https:\/\//.test(path)) return path;
   const { data, error } = await db.storage.from("media").createSignedUrl(path, 3600);
   if (error || !data?.signedUrl) throw new PublishError("Хавсаргасан зураг/видео олдсонгүй. Постоо засаад файлаа дахин оруулна уу.");
   return data.signedUrl;
@@ -59,6 +61,19 @@ async function publishFacebook(db: SupabaseClient, post: Post, ch: Channel): Pro
     return String(videoId);
   }
 
+  const extra = (post.extra_media || []).filter(Boolean);
+  if (post.media_type === "image" && post.media_path && extra.length) {
+    // Олон зурагтай пост: зургуудыг нийтлэхгүйгээр хуулаад, нэг постод хавсаргана
+    const params: Record<string, string> = { message: post.body, access_token: token };
+    const all = [post.media_path, ...extra];
+    for (let i = 0; i < all.length; i++) {
+      const url = await signedUrl(db, all[i]);
+      const ph = await fbPost(`${GRAPH}/${page}/photos`, { url, published: "false", access_token: token });
+      params[`attached_media[${i}]`] = JSON.stringify({ media_fbid: ph.id });
+    }
+    const res = await fbPost(`${GRAPH}/${page}/feed`, params);
+    return String(res.id);
+  }
   if (post.media_type === "image" && post.media_path) {
     const url = await signedUrl(db, post.media_path);
     const res = await fbPost(`${GRAPH}/${page}/photos`, { url, message: post.body, access_token: token });
@@ -91,11 +106,22 @@ async function publishInstagram(db: SupabaseClient, post: Post, ch: Channel, ids
 
   let container = ids.instagram_container;
   if (!container) {
-    const url = await signedUrl(db, post.media_path);
-    const params: Record<string, string> = { caption: post.body, access_token: token };
-    if (post.media_type === "video") { params.media_type = "REELS"; params.video_url = url; }
-    else params.image_url = url;
-    const res = await fbPost(`${GRAPH}/${ig}/media`, params);
+    const extra = (post.extra_media || []).filter(Boolean);
+    let res;
+    if (post.media_type === "image" && extra.length) {
+      const children: string[] = [];
+      for (const pth of [post.media_path, ...extra]) {
+        const c = await fbPost(`${GRAPH}/${ig}/media`, { image_url: await signedUrl(db, pth), is_carousel_item: "true", access_token: token });
+        children.push(String(c.id));
+      }
+      res = await fbPost(`${GRAPH}/${ig}/media`, { media_type: "CAROUSEL", children: children.join(","), caption: post.body, access_token: token });
+    } else {
+      const url = await signedUrl(db, post.media_path);
+      const params: Record<string, string> = { caption: post.body, access_token: token };
+      if (post.media_type === "video") { params.media_type = "REELS"; params.video_url = url; }
+      else params.image_url = url;
+      res = await fbPost(`${GRAPH}/${ig}/media`, params);
+    }
     container = String(res.id);
     ids.instagram_container = container;
     await db.from("posts").update({ external_ids: ids }).eq("id", post.id);

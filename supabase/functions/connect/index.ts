@@ -40,6 +40,17 @@ async function pagesFor(userToken: string) {
   const acc = await graph("/me/accounts", { fields: "id,name,access_token,tasks", access_token: ex.access_token, limit: "100" });
   const pages = (acc.data || []) as { id: string; name: string; access_token: string; tasks?: string[] }[];
   if (!pages.length) {
+    // Facebook Login for Business: сонгосон хуудсууд токены granular_scopes-д байдаг
+    const dbg = await graph("/debug_token", { input_token: ex.access_token, access_token: `${appId}|${secret}` }).catch(() => null);
+    const scopes = (dbg?.data?.granular_scopes || []) as { scope: string; target_ids?: string[] }[];
+    const ids = new Set<string>();
+    for (const s of scopes) if (s.scope.startsWith("pages_")) for (const id of s.target_ids || []) ids.add(id);
+    for (const id of ids) {
+      const p = await graph(`/${id}`, { fields: "id,name,access_token,tasks", access_token: ex.access_token }).catch(() => null);
+      if (p?.access_token) pages.push(p);
+    }
+  }
+  if (!pages.length) {
     // Яагаад хуудас олдсонгүйг энгийнээр тайлбарлана
     const perms = await graph("/me/permissions", { access_token: ex.access_token }).catch(() => ({ data: [] }));
     const granted = new Set((perms.data || []).filter((p: { status: string }) => p.status === "granted").map((p: { permission: string }) => p.permission));

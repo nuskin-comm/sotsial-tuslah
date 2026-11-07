@@ -65,7 +65,7 @@ async function pagesFor(userToken: string) {
     }
     throw new UserError("Эрхүүд зөв байна, гэхдээ хуудсаа сонгоогүй байна. Graph API Explorer дээр \"Generate Access Token\" дахин дараад, Facebook-ийн цонхонд \"Edit access\" дарж Nu Skin хуудсаа ✅ чагтлаад шинэ токеноо оруулна уу. [Оношлогоо: " + diag.join(" | ") + "]");
   }
-  return pages;
+  return { pages, userLL: ex.access_token, appId, secret };
 }
 
 Deno.serve(async (req) => {
@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const userToken = String(body.user_token || "").trim();
     if (!userToken) return reply(400, { error: "Токеноо оруулна уу." });
-    const pages = await pagesFor(userToken);
+    const { pages, userLL, appId, secret } = await pagesFor(userToken);
 
     if (body.action === "list_pages") {
       return reply(200, { pages: pages.map((p) => ({ id: p.id, name: p.name })) });
@@ -105,7 +105,17 @@ Deno.serve(async (req) => {
       // Хуудастай холбоотой Instagram бизнес хаягийг автоматаар холбоно
       let igName: string | null = null;
       const igInfo = await graph(`/${page.id}`, { fields: "instagram_business_account{id,username}", access_token: page.access_token }).catch(() => null);
-      const ig = igInfo?.instagram_business_account;
+      let ig = igInfo?.instagram_business_account;
+      if (!ig?.id) {
+        // Facebook Login for Business: Instagram хаяг токены granular_scopes-д байж болно
+        const dbg = await graph("/debug_token", { input_token: userLL, access_token: `${appId}|${secret}` }).catch(() => null);
+        const sc = (dbg?.data?.granular_scopes || []).find((x: { scope: string }) => x.scope === "instagram_basic" || x.scope === "instagram_content_publish");
+        const igId = sc?.target_ids?.[0];
+        if (igId) {
+          const info = await graph(`/${igId}`, { fields: "id,username", access_token: page.access_token }).catch(() => null);
+          ig = { id: igId, username: info?.username };
+        }
+      }
       if (ig?.id) {
         const { error: e2 } = await admin.from("channels").upsert({
           user_id: u.user.id, platform: "instagram", account_id: ig.id, account_name: ig.username ? "@" + ig.username : "Instagram",

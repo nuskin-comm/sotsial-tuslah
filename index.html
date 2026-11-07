@@ -652,7 +652,7 @@ async function savePost(fields) {
   const { data, error } = await q.select().single();
   if (error) throw error;
   state.editing = data;
-  if (form.savedMedia && form.savedMedia !== data.media_path) sb.storage.from('media').remove([form.savedMedia]);
+  if (form.savedMedia && form.savedMedia !== data.media_path && !/^https:/.test(form.savedMedia)) sb.storage.from('media').remove([form.savedMedia]);
   form.savedMedia = data.media_path;
   if (!p) history.replaceState(null, '', '#compose/' + data.id);
   if (data.scheduled_at) state.selected = ymd(new Date(data.scheduled_at));
@@ -691,7 +691,7 @@ const actions = {
     if (!confirm('Энэ постыг бүр мөсөн устгах уу? Буцаах боломжгүй.')) return;
     const { error } = await sb.from('posts').delete().eq('id', state.editing.id);
     if (error) throw error;
-    if (state.editing.media_path) await sb.storage.from('media').remove([state.editing.media_path]);
+    if (state.editing.media_path && !/^https:/.test(state.editing.media_path)) await sb.storage.from('media').remove([state.editing.media_path]);
     toast('Устгагдлаа'); location.hash = '#calendar';
   }
 };
@@ -707,11 +707,15 @@ async function renderMedia() {
   const box = $('mediaPreview');
   $('mediaRemove').classList.toggle('hidden', !form.media_path);
   if (!form.media_path) { box.classList.add('hidden'); box.innerHTML = ''; return; }
-  const { data } = await sb.storage.from('media').createSignedUrl(form.media_path, 3600);
-  if (!data?.signedUrl) { box.classList.add('hidden'); return; }
+  const urlOf = async (pth) => /^https:\/\//.test(pth) ? pth : (await sb.storage.from('media').createSignedUrl(pth, 3600)).data?.signedUrl;
+  const main = await urlOf(form.media_path);
+  if (!main) { box.classList.add('hidden'); return; }
+  const extra = (state.editing?.media_path === form.media_path ? (state.editing?.extra_media || []) : []);
+  const extraUrls = await Promise.all(extra.map(urlOf));
   box.innerHTML = form.media_type === 'video'
-    ? `<video src="${esc(data.signedUrl)}" controls playsinline preload="metadata"></video>`
-    : `<img src="${esc(data.signedUrl)}" alt="Хавсаргасан зураг">`;
+    ? `<video src="${esc(main)}" controls playsinline preload="metadata"></video>`
+    : [main, ...extraUrls].filter(Boolean).map(u => `<img src="${esc(u)}" alt="Хавсаргасан зураг" style="margin-bottom:6px">`).join('')
+      + (extraUrls.length ? `<div class="ai-note" style="padding:6px 10px">Carousel: ${extraUrls.length + 1} зураг</div>` : '');
   box.classList.remove('hidden');
 }
 // Зургийг JPEG болгож, Instagram-ийн зөвшөөрөх харьцаанд (4:5 – 1.91:1) цагаан хүрээгээр багтаана

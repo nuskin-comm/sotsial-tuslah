@@ -101,7 +101,20 @@ Deno.serve(async (req) => {
         access_token: page.access_token, connected_at: new Date().toISOString(), last_error: null,
       }, { onConflict: "user_id,platform" });
       if (error) throw error;
-      return reply(200, { ok: true, name: page.name });
+
+      // Хуудастай холбоотой Instagram бизнес хаягийг автоматаар холбоно
+      let igName: string | null = null;
+      const igInfo = await graph(`/${page.id}`, { fields: "instagram_business_account{id,username}", access_token: page.access_token }).catch(() => null);
+      const ig = igInfo?.instagram_business_account;
+      if (ig?.id) {
+        const { error: e2 } = await admin.from("channels").upsert({
+          user_id: u.user.id, platform: "instagram", account_id: ig.id, account_name: ig.username ? "@" + ig.username : "Instagram",
+          access_token: page.access_token, connected_at: new Date().toISOString(), last_error: null,
+        }, { onConflict: "user_id,platform" });
+        if (e2) throw e2;
+        igName = ig.username ? "@" + ig.username : "Instagram";
+      }
+      return reply(200, { ok: true, name: page.name, instagram: igName });
     }
     return reply(400, { error: "Буруу үйлдэл." });
   } catch (e) {

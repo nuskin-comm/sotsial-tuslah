@@ -334,7 +334,7 @@
         <div id="fbErr" class="note error hidden"></div>
         <p class="hint">Токен зөвхөн серверт хадгалагдана. Энэ хуудас үүнийг дахин харуулахгүй.</p>
       </div>
-      <div class="channel"><div><strong>Instagram</strong><div class="muted" style="font-size:14px">4-р шатанд холбоно</div></div><span class="badge s-draft">Холбоогүй</span></div>
+      <div class="channel"><div><strong>Instagram</strong><div class="muted" style="font-size:14px" id="igInfo">Facebook хуудастай холбоотой Instagram бизнес хаяг автоматаар холбогдоно</div></div><span class="badge s-draft" id="igBadge">Холбоогүй</span></div>
 
       <h2>Бүртгэл</h2>
       <p class="muted" id="whoami" style="margin:0 0 12px"></p>
@@ -682,13 +682,36 @@ async function renderMedia() {
     : `<img src="${esc(data.signedUrl)}" alt="Хавсаргасан зураг">`;
   box.classList.remove('hidden');
 }
+// Зургийг JPEG болгож, Instagram-ийн зөвшөөрөх харьцаанд (4:5 – 1.91:1) цагаан хүрээгээр багтаана
+async function toInstagramJpeg(file) {
+  const img = await new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file);
+  });
+  let w = img.naturalWidth, h = img.naturalHeight;
+  const scale = Math.min(1, 1440 / Math.max(w, h));
+  w = Math.round(w * scale); h = Math.round(h * scale);
+  let cw = w, ch = h;
+  if (w / h < 0.8) cw = Math.ceil(h * 0.8);        // хэт босоо → хажуу тийш хүрээ
+  else if (w / h > 1.91) ch = Math.ceil(w / 1.91); // хэт хэвтээ → дээр доор хүрээ
+  const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+  const g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, cw, ch);
+  g.drawImage(img, Math.round((cw - w) / 2), Math.round((ch - h) / 2), w, h);
+  URL.revokeObjectURL(img.src);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  if (!blob) throw new Error('jpeg');
+  return new File([blob], 'image.jpg', { type: 'image/jpeg' });
+}
 $('mediaInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0]; e.target.value = '';
+  let file = e.target.files[0]; e.target.value = '';
   if (!file) return;
   const err = $('composeErr'); hide(err);
   if (file.size > 50 * 1024 * 1024) { showError(err, new Error('Файл 50 МБ-аас том байна. Жижиг хувилбарыг сонгоно уу.')); return; }
   const isVideo = file.type.startsWith('video/');
-  const ext = (file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg')).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!isVideo) {
+    try { file = await toInstagramJpeg(file); }
+    catch (_) { showError(err, new Error('Зургийг уншиж чадсангүй. JPG эсвэл PNG зураг сонгоно уу.')); return; }
+  }
+  const ext = isVideo ? ((file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '')) : 'jpg';
   const path = `${state.user.id}/${crypto.randomUUID()}.${ext}`;
   const pick = $('mediaPick'); pick.classList.add('hidden');
   toast('Файл хуулж байна…');
@@ -723,11 +746,17 @@ function renderFb() {
   $('fbConnected').classList.toggle('hidden', !fb);
   $('fbConnect').classList.toggle('hidden', !!fb);
   $('fbPages').innerHTML = ''; hide($('fbErr'));
+  const ig = state.channels.instagram;
+  $('igBadge').textContent = ig ? 'Холбогдсон' : 'Холбоогүй';
+  $('igBadge').className = 'badge ' + (ig ? 's-approved' : 's-draft');
+  $('igInfo').textContent = ig ? ig.account_name + (ig.last_error ? ' — ' + ig.last_error : '')
+    : 'Facebook-оо дахин холбоход хуудастай холбоотой Instagram бизнес хаяг автоматаар холбогдоно';
 }
 $('fbReconnectBtn').addEventListener('click', () => { $('fbConnected').classList.add('hidden'); $('fbConnect').classList.remove('hidden'); });
 $('fbDisconnect').addEventListener('click', async () => {
-  if (!confirm('Facebook хуудсыг салгах уу? Батлагдсан постууд Facebook-т нийтлэгдэхгүй болно.')) return;
-  const { error } = await sb.rpc('disconnect_channel', { p_platform: 'facebook' });
+  if (!confirm('Facebook болон Instagram-ийг салгах уу? Батлагдсан постууд нийтлэгдэхгүй болно.')) return;
+  const { error } = await sb.rpc('disconnect_channel', { p_platform: 'facebook' })
+    .then(r => r.error ? r : sb.rpc('disconnect_channel', { p_platform: 'instagram' }));
   if (error) { toast(friendlyError(error)); return; }
   await loadChannels(); renderFb(); toast('Салгалаа');
 });
@@ -747,7 +776,8 @@ $('fbListBtn').addEventListener('click', async () => {
         const page_id = document.querySelector('input[name=fbPage]:checked').value;
         const r = await callFn('connect', { action: 'save_page', user_token: tok, page_id });
         $('fbToken').value = '';
-        await loadChannels(); renderFb(); toast(`«${r.name}» холбогдлоо`);
+        await loadChannels(); renderFb();
+        toast(r.instagram ? `«${r.name}» болон ${r.instagram} холбогдлоо` : `«${r.name}» холбогдлоо. Instagram олдсонгүй.`);
       } catch (e) { showError(err, e); $('fbSaveBtn').disabled = false; }
     };
   } catch (e) { showError(err, e); }

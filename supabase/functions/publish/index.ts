@@ -6,6 +6,7 @@ const GRAPH = "https://graph.facebook.com/v26.0";
 const RUPLOAD = "https://rupload.facebook.com/video-upload/v26.0";
 
 class PublishError extends Error {}
+class StillProcessing extends Error {} // Instagram видео боловсруулж дуусаагүй — дараагийн удаа үргэлжлүүлнэ
 
 type Post = {
   id: string; user_id: string; kind: string; body: string; channels: string[];
@@ -72,6 +73,51 @@ async function publishFacebook(db: SupabaseClient, post: Post, ch: Channel): Pro
   return String(res.id);
 }
 
+async function fbGet(url: string, params: Record<string, string>) {
+  const u = new URL(url);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const r = await fetch(u);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.error) throw fbError(data, r.status);
+  return data;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Instagram: 1) контейнер үүсгэх 2) бэлэн болохыг хүлээх 3) нийтлэх
+async function publishInstagram(db: SupabaseClient, post: Post, ch: Channel, ids: Record<string, string>): Promise<string> {
+  const ig = ch.account_id, token = ch.access_token;
+  if (!post.media_path) throw new PublishError("Instagram-д зураг эсвэл видео заавал хэрэгтэй.");
+
+  let container = ids.instagram_container;
+  if (!container) {
+    const url = await signedUrl(db, post.media_path);
+    const params: Record<string, string> = { caption: post.body, access_token: token };
+    if (post.media_type === "video") { params.media_type = "REELS"; params.video_url = url; }
+    else params.image_url = url;
+    const res = await fbPost(`${GRAPH}/${ig}/media`, params);
+    container = String(res.id);
+    ids.instagram_container = container;
+    await db.from("posts").update({ external_ids: ids }).eq("id", post.id);
+  }
+
+  // Бэлэн болтол хүлээнэ (видео удаан байж болно)
+  const deadline = Date.now() + 40_000;
+  while (true) {
+    const st = await fbGet(`${GRAPH}/${container}`, { fields: "status_code", access_token: token });
+    if (st.status_code === "FINISHED") break;
+    if (st.status_code === "ERROR" || st.status_code === "EXPIRED") {
+      delete ids.instagram_container;
+      throw new PublishError("Instagram зураг/видеог боловсруулж чадсангүй. Зураг: JPG, харьцаа 4:5-аас 1.91:1 хооронд. Reel: босоо MP4, 3–90 секунд.");
+    }
+    if (Date.now() > deadline) throw new StillProcessing();
+    await sleep(5000);
+  }
+  const pub = await fbPost(`${GRAPH}/${ig}/media_publish`, { creation_id: container, access_token: token });
+  delete ids.instagram_container;
+  return String(pub.id);
+}
+
 async function publishOne(db: SupabaseClient, post: Post) {
   const ids: Record<string, string> = { ...(post.external_ids || {}) };
   try {
@@ -81,13 +127,18 @@ async function publishOne(db: SupabaseClient, post: Post) {
       const ch = (chans || []).find((c: Channel) => c.platform === name);
       if (!ch) throw new PublishError(`${name === "facebook" ? "Facebook" : "Instagram"} холбогдоогүй байна. Тохиргооноос холбоод "Дахин оролдох" дарна уу.`);
       if (name === "facebook") ids.facebook = await publishFacebook(db, post, ch);
-      else throw new PublishError("Instagram-д нийтлэх боломж 4-р шатанд нэмэгдэнэ.");
+      else if (name === "instagram") ids.instagram = await publishInstagram(db, post, ch, ids);
       // Суваг бүрийн дараа шууд хадгална — дахин оролдоход давхардахгүй
       await db.from("posts").update({ external_ids: ids }).eq("id", post.id);
     }
     await db.from("posts").update({ status: "published", published_at: new Date().toISOString(), error: null, external_ids: ids }).eq("id", post.id);
     return { id: post.id, ok: true };
   } catch (e) {
+    if (e instanceof StillProcessing) {
+      // Видео боловсруулагдаж байна: 5 минутын дараа товлолт дахин авна
+      await db.from("posts").update({ status: "approved", external_ids: ids }).eq("id", post.id);
+      return { id: post.id, ok: false, pending: true };
+    }
     const msg = e instanceof PublishError ? e.message : "Тодорхойгүй алдаа гарлаа. \"Дахин оролдох\" дарна уу.";
     if (!(e instanceof PublishError)) console.error(e);
     await db.from("posts").update({ status: "failed", error: msg, external_ids: ids }).eq("id", post.id);

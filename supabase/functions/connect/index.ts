@@ -49,7 +49,7 @@ async function pagesFor(userToken: string) {
     const ids = new Set<string>();
     for (const s of scopes) if (s.scope.startsWith("pages_")) for (const id of s.target_ids || []) ids.add(id);
     for (const id of ids) {
-      const p = await graph(`/${id}`, { fields: "id,name,access_token,tasks", access_token: ex.access_token }).catch((e) => { diag.push(`page ${id}: ${e.message}`); return null; });
+      const p = await graph(`/${id}`, { fields: "id,name,access_token", access_token: ex.access_token }).catch((e) => { diag.push(`page ${id}: ${e.message}`); return null; });
       if (p?.access_token) pages.push(p);
       else if (p) diag.push(`page ${id}: access_token алга`);
     }

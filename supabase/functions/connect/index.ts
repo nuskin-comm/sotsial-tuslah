@@ -38,16 +38,20 @@ async function pagesFor(userToken: string) {
     grant_type: "fb_exchange_token", client_id: appId, client_secret: secret, fb_exchange_token: userToken,
   });
   const acc = await graph("/me/accounts", { fields: "id,name,access_token,tasks", access_token: ex.access_token, limit: "100" });
+  const diag: string[] = [];
   const pages = (acc.data || []) as { id: string; name: string; access_token: string; tasks?: string[] }[];
   if (!pages.length) {
     // Facebook Login for Business: сонгосон хуудсууд токены granular_scopes-д байдаг
-    const dbg = await graph("/debug_token", { input_token: ex.access_token, access_token: `${appId}|${secret}` }).catch(() => null);
+    const dbg = await graph("/debug_token", { input_token: ex.access_token, access_token: `${appId}|${secret}` }).catch((e) => { diag.push("debug_token: " + e.message); return null; });
     const scopes = (dbg?.data?.granular_scopes || []) as { scope: string; target_ids?: string[] }[];
+    diag.push("scopes: " + (scopes.map((s) => `${s.scope}[${(s.target_ids || []).join("/")}]`).join(", ") || "хоосон"));
+    diag.push("token type: " + (dbg?.data?.type || "?") + ", valid: " + dbg?.data?.is_valid);
     const ids = new Set<string>();
     for (const s of scopes) if (s.scope.startsWith("pages_")) for (const id of s.target_ids || []) ids.add(id);
     for (const id of ids) {
-      const p = await graph(`/${id}`, { fields: "id,name,access_token,tasks", access_token: ex.access_token }).catch(() => null);
+      const p = await graph(`/${id}`, { fields: "id,name,access_token,tasks", access_token: ex.access_token }).catch((e) => { diag.push(`page ${id}: ${e.message}`); return null; });
       if (p?.access_token) pages.push(p);
+      else if (p) diag.push(`page ${id}: access_token алга`);
     }
   }
   if (!pages.length) {
@@ -59,7 +63,7 @@ async function pagesFor(userToken: string) {
     if (missing.length) {
       throw new UserError(`Токен авахдаа дараах эрхийг зөвшөөрөөгүй байна: ${missing.join(", ")}. Graph API Explorer дээр "Generate Access Token" дахин дарж, бүх эрхийг зөвшөөрнө үү.`);
     }
-    throw new UserError("Эрхүүд зөв байна, гэхдээ хуудсаа сонгоогүй байна. Graph API Explorer дээр \"Generate Access Token\" дахин дараад, Facebook-ийн цонхонд \"Edit access\" дарж Nu Skin хуудсаа ✅ чагтлаад шинэ токеноо оруулна уу.");
+    throw new UserError("Эрхүүд зөв байна, гэхдээ хуудсаа сонгоогүй байна. Graph API Explorer дээр \"Generate Access Token\" дахин дараад, Facebook-ийн цонхонд \"Edit access\" дарж Nu Skin хуудсаа ✅ чагтлаад шинэ токеноо оруулна уу. [Оношлогоо: " + diag.join(" | ") + "]");
   }
   return pages;
 }

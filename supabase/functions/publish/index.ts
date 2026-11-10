@@ -12,6 +12,7 @@ type Post = {
   id: string; user_id: string; kind: string; body: string; channels: string[];
   media_path: string | null; media_type: string | null; external_ids: Record<string, string>;
   extra_media?: string[];
+  story?: boolean; story_media?: string | null;
 };
 type Channel = { platform: string; account_id: string; access_token: string };
 
@@ -127,21 +128,59 @@ async function publishInstagram(db: SupabaseClient, post: Post, ch: Channel, ids
     await db.from("posts").update({ external_ids: ids }).eq("id", post.id);
   }
 
-  // Бэлэн болтол хүлээнэ (видео удаан байж болно)
+  return await igWaitPublish(ig, token, container, ids, "instagram_container");
+}
+
+// Контейнер бэлэн болтол хүлээгээд нийтэлнэ (видео удаан байж болно)
+async function igWaitPublish(ig: string, token: string, container: string, ids: Record<string, string>, key: string): Promise<string> {
   const deadline = Date.now() + 40_000;
   while (true) {
     const st = await fbGet(`${GRAPH}/${container}`, { fields: "status_code", access_token: token });
     if (st.status_code === "FINISHED") break;
     if (st.status_code === "ERROR" || st.status_code === "EXPIRED") {
-      delete ids.instagram_container;
+      delete ids[key];
       throw new PublishError("Instagram зураг/видеог боловсруулж чадсангүй. Зураг: JPG, харьцаа 4:5-аас 1.91:1 хооронд. Reel: босоо MP4, 3–90 секунд.");
     }
     if (Date.now() > deadline) throw new StillProcessing();
     await sleep(5000);
   }
   const pub = await fbPost(`${GRAPH}/${ig}/media_publish`, { creation_id: container, access_token: token });
-  delete ids.instagram_container;
+  delete ids[key];
   return String(pub.id);
+}
+
+// ---------- Стори ----------
+async function publishIgStory(db: SupabaseClient, post: Post, ch: Channel, ids: Record<string, string>): Promise<string> {
+  const ig = ch.account_id, token = ch.access_token;
+  let container = ids.instagram_story_container;
+  if (!container) {
+    const path = post.media_type === "video" ? post.media_path! : (post.story_media || post.media_path!);
+    const url = await signedUrl(db, path);
+    const params: Record<string, string> = { media_type: "STORIES", access_token: token };
+    if (post.media_type === "video") params.video_url = url; else params.image_url = url;
+    const res = await fbPost(`${GRAPH}/${ig}/media`, params);
+    container = String(res.id);
+    ids.instagram_story_container = container;
+    await db.from("posts").update({ external_ids: ids }).eq("id", post.id);
+  }
+  return await igWaitPublish(ig, token, container, ids, "instagram_story_container");
+}
+
+async function publishFbStory(db: SupabaseClient, post: Post, ch: Channel): Promise<string> {
+  const page = ch.account_id, token = ch.access_token;
+  if (post.media_type === "video") {
+    const fileUrl = await signedUrl(db, post.media_path!);
+    const start = await fbPost(`${GRAPH}/${page}/video_stories`, { upload_phase: "start", access_token: token });
+    const videoId = start.video_id;
+    if (!videoId) throw new PublishError("Facebook стори эхлүүлж чадсангүй.");
+    await fbPost(`${RUPLOAD}/${videoId}`, {}, { Authorization: `OAuth ${token}`, file_url: fileUrl });
+    const fin = await fbPost(`${GRAPH}/${page}/video_stories`, { upload_phase: "finish", video_id: videoId, access_token: token });
+    return String(fin.post_id || videoId);
+  }
+  const url = await signedUrl(db, post.story_media || post.media_path!);
+  const ph = await fbPost(`${GRAPH}/${page}/photos`, { url, published: "false", access_token: token });
+  const st = await fbPost(`${GRAPH}/${page}/photo_stories`, { photo_id: String(ph.id), access_token: token });
+  return String(st.post_id || ph.id);
 }
 
 async function publishOne(db: SupabaseClient, post: Post) {
@@ -156,6 +195,23 @@ async function publishOne(db: SupabaseClient, post: Post) {
       else if (name === "instagram") ids.instagram = await publishInstagram(db, post, ch, ids);
       // Суваг бүрийн дараа шууд хадгална — дахин оролдоход давхардахгүй
       await db.from("posts").update({ external_ids: ids }).eq("id", post.id);
+    }
+    // Стори руу давхар (зураг/видеотой пост л)
+    if (post.story !== false && post.media_path) {
+      for (const name of post.channels) {
+        const key = `${name}_story`;
+        if (ids[key]) continue;
+        const ch = (chans || []).find((c: Channel) => c.platform === name);
+        if (!ch) continue;
+        try {
+          ids[key] = name === "facebook" ? await publishFbStory(db, post, ch) : await publishIgStory(db, post, ch, ids);
+        } catch (e) {
+          if (e instanceof StillProcessing) throw e;
+          const why = e instanceof PublishError ? e.message : "тодорхойгүй алдаа";
+          throw new PublishError(`Пост нийтлэгдсэн, гэхдээ ${name === "facebook" ? "Facebook" : "Instagram"} стори алдаатай: ${why} "Дахин оролдох" дарвал зөвхөн сторийг дахин оролдоно.`);
+        }
+        await db.from("posts").update({ external_ids: ids }).eq("id", post.id);
+      }
     }
     await db.from("posts").update({ status: "published", published_at: new Date().toISOString(), error: null, external_ids: ids }).eq("id", post.id);
     return { id: post.id, ok: true };

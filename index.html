@@ -306,6 +306,8 @@
             <div id="mediaPreview" class="media-preview hidden"></div>
           </div>
 
+          <label class="check"><input type="checkbox" id="storyChk" checked> Стори руу давхар нийтлэх (Facebook + Instagram)</label>
+
           <label class="field"><span>Нийтлэх өдөр, цаг</span></label>
           <div class="two">
             <input type="date" id="date" aria-label="Өдөр">
@@ -585,6 +587,7 @@ async function openCompose(id) {
   $('topic').value = p?.topic || '';
   $('body').value = p?.body || '';
   $('script').value = p?.script || '';
+  $('storyChk').checked = p ? p.story !== false : true;
   form.media_path = p?.media_path || null; form.media_type = p?.media_type || null; form.savedMedia = form.media_path;
   renderMedia();
   $('aiInstruction').value = '';
@@ -642,6 +645,7 @@ function readForm() {
     topic: $('topic').value.trim(), body: $('body').value.trim(),
     script: form.kind === 'reel' ? $('script').value.trim() : '',
     media_path: form.media_path || null, media_type: form.media_type || null,
+    story: $('storyChk').checked,
     scheduled_at: date && time ? new Date(`${date}T${time}`).toISOString() : null
   };
 }
